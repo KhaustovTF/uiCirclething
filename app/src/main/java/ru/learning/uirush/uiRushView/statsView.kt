@@ -14,7 +14,6 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.random.Random
 
 class StatsView @JvmOverloads constructor(
     context: Context,
@@ -23,9 +22,15 @@ class StatsView @JvmOverloads constructor(
     defStyleRes: Int = 0,
 ) : View(context, attributeSet, defStyleAttr, defStyleRes) {
 
-    private var textSize = AndroidUtils.dp(context, 20).toFloat()
-    private var lineWidth = AndroidUtils.dp(context, 5)
-    private var colors = emptyList<Int>()
+    private var textSizePx = AndroidUtils.dp(context, 20).toFloat()
+    private var lineWidthPx = AndroidUtils.dp(context, 16).toFloat()
+
+    private var colors: IntArray = intArrayOf(
+        0xFFFF2D55.toInt(),
+        0xFF5856D6.toInt(),
+        0xFF34C759.toInt(),
+        0xFFFFCC00.toInt(),
+    )
 
     var data: List<Float> = emptyList()
         set(value) {
@@ -37,41 +42,44 @@ class StatsView @JvmOverloads constructor(
     private var center = PointF()
     private var oval = RectF()
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = lineWidth.toFloat()
+    private val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.BUTT
+        strokeWidth = lineWidthPx
+    }
+
+    private val capPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
     }
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = this@StatsView.textSize
-        style = Paint.Style.FILL
         textAlign = Paint.Align.CENTER
+        style = Paint.Style.FILL
+        textSize = textSizePx
     }
 
     init {
         context.withStyledAttributes(attributeSet, R.styleable.StatsView) {
-            textSize = getDimension(R.styleable.StatsView_textSize, textSize)
-            lineWidth = getDimension(R.styleable.StatsView_lineWidth, lineWidth.toFloat()).toInt()
+            textSizePx = getDimension(R.styleable.StatsView_textSize, textSizePx)
+            lineWidthPx = getDimension(R.styleable.StatsView_lineWidth, lineWidthPx)
 
-            colors = listOf(
-                getColor(R.styleable.StatsView_color1, generateRandomColor()),
-                getColor(R.styleable.StatsView_color2, generateRandomColor()),
-                getColor(R.styleable.StatsView_color3, generateRandomColor()),
-                getColor(R.styleable.StatsView_color4, generateRandomColor()),
-            )
+            val c1 = getColor(R.styleable.StatsView_color1, colors[0])
+            val c2 = getColor(R.styleable.StatsView_color2, colors[1])
+            val c3 = getColor(R.styleable.StatsView_color3, colors[2])
+            val c4 = getColor(R.styleable.StatsView_color4, colors[3])
+            colors = intArrayOf(c1, c2, c3, c4)
         }
 
-        paint.strokeWidth = lineWidth.toFloat()
-        textPaint.textSize = textSize
+        arcPaint.strokeWidth = lineWidthPx
+        textPaint.textSize = textSizePx
 
         requestLayout()
         invalidate()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        radius = min(w, h) / 2F - lineWidth
+        radius = min(w, h) / 2F - lineWidthPx
         center = PointF(w / 2F, h / 2F)
         oval = RectF(
             center.x - radius,
@@ -87,55 +95,56 @@ class StatsView @JvmOverloads constructor(
         val sum = data.sum()
         if (sum <= 0F) return
 
-        val sweeps = data.map { datum ->
-            if (datum <= 0F) 0F else (datum / sum) * 360F
+        val sweeps = data.map { v ->
+            if (v <= 0F) 0F else (v / sum) * 360F
         }
+
         val totalSweep = sweeps.sum()
+        val closesCircle = abs(totalSweep - 360F) < 0.5F
 
         var startAngle = -90F
-
-        // стартовый “кругляш” рисуем один раз
-        paint.color = colorForIndex(0)
-        drawCap(canvas, startAngle)
-
         sweeps.forEachIndexed { index, sweep ->
             if (sweep <= 0F) return@forEachIndexed
-
-            paint.color = colorForIndex(index)
-            canvas.drawArc(oval, startAngle, sweep, false, paint)
-
-            val isLast = index == sweeps.lastIndex
-            val closesCircle = abs(totalSweep - 360F) < 0.5F
-
-            // чтобы не было двойного капа на стыке конца и начала при полном круге
-            if (!(isLast && closesCircle)) {
-                drawCap(canvas, startAngle + sweep)
-            }
-
+            setColor(index)
+            canvas.drawArc(oval, startAngle, sweep, false, arcPaint)
             startAngle += sweep
         }
 
+        startAngle = -90F
+        sweeps.forEachIndexed { index, sweep ->
+            if (sweep <= 0F) return@forEachIndexed
+            setColor(index)
+            drawCap(canvas, startAngle)
+            startAngle += sweep
+        }
+
+        if (!closesCircle) {
+            val lastIndexWithValue = sweeps.indexOfLast { it > 0F }
+            if (lastIndexWithValue != -1) {
+                val endAngle = -90F + sweeps.take(lastIndexWithValue + 1).sum()
+                setColor(lastIndexWithValue)
+                drawCap(canvas, endAngle)
+            }
+        }
+
         canvas.drawText(
-            "%.2f%%".format(100F),
+            "100.00%",
             center.x,
             center.y + textPaint.textSize / 4,
             textPaint
         )
     }
 
+    private fun setColor(index: Int) {
+        val c = colors[index % colors.size]
+        arcPaint.color = c
+        capPaint.color = c
+    }
+
     private fun drawCap(canvas: Canvas, angleDeg: Float) {
         val angleRad = Math.toRadians(angleDeg.toDouble())
         val x = (center.x + cos(angleRad) * radius).toFloat()
         val y = (center.y + sin(angleRad) * radius).toFloat()
-        canvas.drawCircle(x, y, lineWidth / 2F, paint)
-    }
-
-    private fun colorForIndex(index: Int): Int {
-        if (colors.isEmpty()) return generateRandomColor()
-        return colors[index % colors.size]
-    }
-
-    private fun generateRandomColor(): Int {
-        return Random.nextInt(0xFF000000.toInt(), 0xFFFFFFFF.toInt())
+        canvas.drawCircle(x, y, lineWidthPx / 2F, capPaint)
     }
 }
