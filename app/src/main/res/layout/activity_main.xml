@@ -7,6 +7,13 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="top|center_horizontal"
+        tools:ignore="MissingConstraints" />
+
     <ru.learning.lastrushcoding.uib.StatsView
         android:id="@+id/statsView"
         android:layout_width="300dp"
